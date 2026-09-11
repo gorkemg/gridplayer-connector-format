@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.invalid/gridplayer-connector-format/schema/connector.schema.json",
+  "title": "GridPlayer connector definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "version", "transport", "auth"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "transport": { "enum": ["rest", "graphql"] },
+    "auth": { "$ref": "#/$defs/authSpec" },
+    "metadataLookup": { "oneOf": [{ "$ref": "#/$defs/metadataLookupSpec" }, { "type": "null" }] },
+    "browse": { "oneOf": [{ "$ref": "#/$defs/browseSpec" }, { "type": "null" }] },
+    "tagsLookup": { "oneOf": [{ "$ref": "#/$defs/tagsLookupSpec" }, { "type": "null" }] }
+  },
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+
+    "authSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["header", "login", "none"] },
+        "headerName": { "$ref": "#/$defs/nullableString" },
+        "extraHeaders": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": { "type": "string" } },
+            { "type": "null" }
+          ]
+        },
+        "login": { "oneOf": [{ "$ref": "#/$defs/loginSpec" }, { "type": "null" }] },
+        "queryParamName": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "loginSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "usernameField", "passwordField", "tokenResponsePath"],
+      "properties": {
+        "path": { "type": "string" },
+        "usernameField": { "type": "string" },
+        "passwordField": { "type": "string" },
+        "tokenResponsePath": { "type": "string" }
+      }
+    },
+
+    "metadataLookupSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dialects"],
+      "properties": {
+        "dialects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dialectSpec" } }
+      }
+    },
+
+    "dialectSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "query", "variables", "resultPath", "mapping"],
+      "properties": {
+        "id": { "type": "string" },
+        "query": { "type": "string" },
+        "variables": {},
+        "resultPath": { "type": "string" },
+        "mapping": { "$ref": "#/$defs/fieldMapping" }
+      }
+    },
+
+    "fieldMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "$ref": "#/$defs/nullableString" },
+        "cast": { "$ref": "#/$defs/nullableString" },
+        "tags": { "$ref": "#/$defs/nullableString" },
+        "chapters": { "oneOf": [{ "$ref": "#/$defs/chapterMapping" }, { "type": "null" }] }
+      }
+    },
+
+    "chapterMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arrayPath", "secondsPath"],
+      "properties": {
+        "arrayPath": { "type": "string" },
+        "secondsPath": { "type": "string" },
+        "endSecondsPath": { "$ref": "#/$defs/nullableString" },
+        "titlePath": { "$ref": "#/$defs/nullableString" },
+        "tagNamePath": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "tagsLookupSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "resultPath", "namesPath"],
+      "properties": {
+        "query": { "type": "string" },
+        "resultPath": { "type": "string" },
+        "namesPath": { "type": "string" }
+      }
+    },
+
+    "browseSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rest": { "oneOf": [{ "$ref": "#/$defs/restBrowseSpec" }, { "type": "null" }] },
+        "graphql": { "oneOf": [{ "$ref": "#/$defs/graphqlBrowseSpec" }, { "type": "null" }] },
+        "categories": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/categorySourceSpec" } },
+            { "type": "null" }
+          ]
+        },
+        "containerTypeValues": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+
+    "restBrowseSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["listing", "streamRequest"],
+      "properties": {
+        "listing": { "$ref": "#/$defs/restListingSpec" },
+        "streamRequest": { "$ref": "#/$defs/restRequestSpec" },
+        "imageRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] }
+      }
+    },
+
+    "restListingSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["listRequest", "itemsPath", "itemMapping"],
+      "properties": {
+        "listRequest": { "$ref": "#/$defs/restRequestSpec" },
+        "itemsPath": { "type": "string" },
+        "itemMapping": { "$ref": "#/$defs/mediaItemMapping" },
+        "sortFieldMap": { "$ref": "#/$defs/stringMap" },
+        "sortDirectionMap": { "$ref": "#/$defs/stringMap" }
+      }
+    },
+
+    "stringMap": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": { "type": "string" } },
+        { "type": "null" }
+      ]
+    },
+
+    "categorySourceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "expandInSidebar", "selectionContextKey"],
+      "properties": {
+        "label": { "type": "string" },
+        "expandInSidebar": { "type": "boolean" },
+        "rest": { "oneOf": [{ "$ref": "#/$defs/restListingSpec" }, { "type": "null" }] },
+        "graphql": { "oneOf": [{ "$ref": "#/$defs/graphqlBrowseSpec" }, { "type": "null" }] },
+        "staticEntries": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/staticCategoryEntrySpec" } },
+            { "type": "null" }
+          ]
+        },
+        "selectionContextKey": { "type": "string" },
+        "dependsOnContextKey": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "staticCategoryEntrySpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+
+    "restRequestSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path"],
+      "properties": {
+        "method": { "type": "string" },
+        "path": { "type": "string" },
+        "query": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": { "type": "string" } },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+
+    "graphqlBrowseSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "variables", "resultPath", "itemsPath", "itemMapping"],
+      "properties": {
+        "query": { "type": "string" },
+        "variables": {},
+        "resultPath": { "type": "string" },
+        "itemsPath": { "type": "string" },
+        "totalCountPath": { "$ref": "#/$defs/nullableString" },
+        "itemMapping": { "$ref": "#/$defs/mediaItemMapping" },
+        "sortFieldMap": { "$ref": "#/$defs/stringMap" },
+        "sortDirectionMap": { "$ref": "#/$defs/stringMap" }
+      }
+    },
+
+    "mediaItemMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "durationPath": { "$ref": "#/$defs/nullableString" },
+        "durationDivisor": { "type": ["number", "null"] },
+        "fileSizePath": { "$ref": "#/$defs/nullableString" },
+        "screenshotURLPath": { "$ref": "#/$defs/nullableString" },
+        "streamURLPath": { "$ref": "#/$defs/nullableString" },
+        "castPath": { "$ref": "#/$defs/nullableString" },
+        "tagsPath": { "$ref": "#/$defs/nullableString" },
+        "chapters": { "oneOf": [{ "$ref": "#/$defs/chapterMapping" }, { "type": "null" }] },
+        "typePath": { "$ref": "#/$defs/nullableString" }
+      }
+    }
+  }
+}

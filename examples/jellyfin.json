@@ -1,0 +1,75 @@
+{
+    "id": "jellyfin",
+    "name": "Jellyfin",
+    "version": 2,
+    "transport": "rest",
+    "auth": {
+        "type": "login",
+        "headerName": "X-Emby-Token",
+        "extraHeaders": {
+            "X-Emby-Authorization": "MediaBrowser Client=\"GridPlayer\", Device=\"Mac\", DeviceId=\"gridplayer-app\", Version=\"1.0.0\""
+        },
+        "login": {
+            "path": "Users/AuthenticateByName",
+            "usernameField": "Username",
+            "passwordField": "Pw",
+            "tokenResponsePath": "AccessToken"
+        },
+        "queryParamName": "api_key"
+    },
+    "metadataLookup": null,
+    "browse": {
+        "rest": {
+            "listing": {
+                "listRequest": {
+                    "method": "GET",
+                    "path": "Items",
+                    "query": {
+                        "IncludeItemTypes": "Movie,Series,Season,Episode,Video",
+                        "ParentId": "{parentId}",
+                        "Recursive": "{recursive}",
+                        "SearchTerm": "{searchText}",
+                        "SortBy": "IndexNumber,SortName",
+                        "SortOrder": "Ascending"
+                    }
+                },
+                "itemsPath": "Items",
+                "itemMapping": {
+                    "id": "Id",
+                    "title": "Name",
+                    "durationPath": "RunTimeTicks",
+                    "durationDivisor": 10000000,
+                    "fileSizePath": null,
+                    "screenshotURLPath": null,
+                    "streamURLPath": null,
+                    "castPath": null,
+                    "tagsPath": null,
+                    "chapters": null,
+                    "typePath": "Type"
+                }
+            },
+            "streamRequest": { "method": "GET", "path": "Videos/{id}/stream", "query": { "Static": "true" } },
+            "imageRequest": { "method": "GET", "path": "Items/{id}/Images/Primary", "query": null }
+        },
+        "graphql": null,
+        "categories": [
+            {
+                "label": "Libraries",
+                "expandInSidebar": true,
+                "rest": {
+                    "listRequest": { "method": "GET", "path": "Library/MediaFolders", "query": null },
+                    "itemsPath": "Items",
+                    "itemMapping": {
+                        "id": "Id",
+                        "title": "Name",
+                        "screenshotURLPath": null,
+                        "streamURLPath": null
+                    }
+                },
+                "graphql": null,
+                "selectionContextKey": "parentId"
+            }
+        ],
+        "containerTypeValues": ["Series", "Season"]
+    }
+}
