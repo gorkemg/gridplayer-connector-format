@@ -13,10 +13,15 @@
     "auth": { "$ref": "#/$defs/authSpec" },
     "metadataLookup": { "oneOf": [{ "$ref": "#/$defs/metadataLookupSpec" }, { "type": "null" }] },
     "browse": { "oneOf": [{ "$ref": "#/$defs/browseSpec" }, { "type": "null" }] },
-    "tagsLookup": { "oneOf": [{ "$ref": "#/$defs/tagsLookupSpec" }, { "type": "null" }] }
+    "tagsLookup": { "oneOf": [{ "$ref": "#/$defs/tagsLookupSpec" }, { "type": "null" }] },
+    "actions": { "oneOf": [{ "$ref": "#/$defs/actionsSpec" }, { "type": "null" }] },
+    "attribution": { "oneOf": [{ "$ref": "#/$defs/attributionSpec" }, { "type": "null" }] }
   },
   "$defs": {
     "nullableString": { "type": ["string", "null"] },
+    "nullableNumber": { "type": ["number", "null"] },
+    "nullableBoolean": { "type": ["boolean", "null"] },
+    "stringOrNumber": { "type": ["string", "number"] },
 
     "authSpec": {
       "type": "object",
@@ -32,7 +37,8 @@
           ]
         },
         "login": { "oneOf": [{ "$ref": "#/$defs/loginSpec" }, { "type": "null" }] },
-        "queryParamName": { "$ref": "#/$defs/nullableString" }
+        "queryParamName": { "$ref": "#/$defs/nullableString" },
+        "headerValuePrefix": { "$ref": "#/$defs/nullableString" }
       }
     },
 
@@ -44,16 +50,22 @@
         "path": { "type": "string" },
         "usernameField": { "type": "string" },
         "passwordField": { "type": "string" },
-        "tokenResponsePath": { "type": "string" }
+        "tokenResponsePath": { "type": "string" },
+        "userIDResponsePath": { "$ref": "#/$defs/nullableString" }
       }
     },
 
     "metadataLookupSpec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["dialects"],
       "properties": {
-        "dialects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dialectSpec" } }
+        "dialects": {
+          "oneOf": [
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dialectSpec" } },
+            { "type": "null" }
+          ]
+        },
+        "rest": { "oneOf": [{ "$ref": "#/$defs/restMetadataLookupSpec" }, { "type": "null" }] }
       }
     },
 
@@ -67,6 +79,20 @@
         "variables": {},
         "resultPath": { "type": "string" },
         "mapping": { "$ref": "#/$defs/fieldMapping" }
+      }
+    },
+
+    "restMetadataLookupSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["searchRequest", "resultsPath", "resultIDPath", "detail"],
+      "properties": {
+        "searchRequest": { "$ref": "#/$defs/restRequestSpec" },
+        "resultsPath": { "type": "string" },
+        "resultIDPath": { "type": "string" },
+        "resultTypePath": { "$ref": "#/$defs/nullableString" },
+        "resultTypeMap": { "$ref": "#/$defs/stringMap" },
+        "detail": { "$ref": "#/$defs/itemDetailSpec" }
       }
     },
 
@@ -88,6 +114,7 @@
       "properties": {
         "arrayPath": { "type": "string" },
         "secondsPath": { "type": "string" },
+        "secondsDivisor": { "$ref": "#/$defs/nullableNumber" },
         "endSecondsPath": { "$ref": "#/$defs/nullableString" },
         "titlePath": { "$ref": "#/$defs/nullableString" },
         "tagNamePath": { "$ref": "#/$defs/nullableString" }
@@ -122,7 +149,45 @@
             { "type": "array", "items": { "type": "string" } },
             { "type": "null" }
           ]
-        }
+        },
+        "supportsFavoriteFilter": { "$ref": "#/$defs/nullableBoolean" },
+        "maxRatingFilter": { "type": ["integer", "null"] },
+        "ratingFilterScale": { "$ref": "#/$defs/nullableNumber" },
+        "ratingFilterExclusiveComparator": { "$ref": "#/$defs/nullableBoolean" },
+        "ratingFilterModifierToken": { "$ref": "#/$defs/nullableString" },
+        "itemDetail": { "oneOf": [{ "$ref": "#/$defs/itemDetailSpec" }, { "type": "null" }] }
+      }
+    },
+
+    "itemDetailSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rest": { "oneOf": [{ "$ref": "#/$defs/restItemDetailSpec" }, { "type": "null" }] },
+        "graphql": { "oneOf": [{ "$ref": "#/$defs/graphqlItemDetailSpec" }, { "type": "null" }] }
+      }
+    },
+
+    "restItemDetailSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "itemMapping"],
+      "properties": {
+        "request": { "$ref": "#/$defs/restRequestSpec" },
+        "itemPath": { "$ref": "#/$defs/nullableString" },
+        "itemMapping": { "$ref": "#/$defs/mediaItemMapping" }
+      }
+    },
+
+    "graphqlItemDetailSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "variables", "resultPath", "itemMapping"],
+      "properties": {
+        "query": { "type": "string" },
+        "variables": {},
+        "resultPath": { "type": "string" },
+        "itemMapping": { "$ref": "#/$defs/mediaItemMapping" }
       }
     },
 
@@ -146,7 +211,10 @@
         "itemsPath": { "type": "string" },
         "itemMapping": { "$ref": "#/$defs/mediaItemMapping" },
         "sortFieldMap": { "$ref": "#/$defs/stringMap" },
-        "sortDirectionMap": { "$ref": "#/$defs/stringMap" }
+        "sortDirectionMap": { "$ref": "#/$defs/stringMap" },
+        "favoriteFilterValue": { "$ref": "#/$defs/nullableString" },
+        "totalCountPath": { "$ref": "#/$defs/nullableString" },
+        "imageRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] }
       }
     },
 
@@ -227,14 +295,67 @@
         "id": { "type": "string" },
         "title": { "type": "string" },
         "durationPath": { "$ref": "#/$defs/nullableString" },
-        "durationDivisor": { "type": ["number", "null"] },
+        "durationDivisor": { "$ref": "#/$defs/nullableNumber" },
         "fileSizePath": { "$ref": "#/$defs/nullableString" },
         "screenshotURLPath": { "$ref": "#/$defs/nullableString" },
         "streamURLPath": { "$ref": "#/$defs/nullableString" },
         "castPath": { "$ref": "#/$defs/nullableString" },
         "tagsPath": { "$ref": "#/$defs/nullableString" },
         "chapters": { "oneOf": [{ "$ref": "#/$defs/chapterMapping" }, { "type": "null" }] },
-        "typePath": { "$ref": "#/$defs/nullableString" }
+        "typePath": { "$ref": "#/$defs/nullableString" },
+        "ratingPath": { "$ref": "#/$defs/nullableString" },
+        "ratingDivisor": { "$ref": "#/$defs/nullableNumber" },
+        "isFavoritePath": { "$ref": "#/$defs/nullableString" },
+        "coverURLPath": { "$ref": "#/$defs/nullableString" },
+        "videoCodecPath": { "$ref": "#/$defs/nullableString" },
+        "audioCodecPath": { "$ref": "#/$defs/nullableString" },
+        "bitratePath": { "$ref": "#/$defs/nullableString" },
+        "bitrateDivisor": { "$ref": "#/$defs/nullableNumber" },
+        "frameRatePath": { "$ref": "#/$defs/nullableString" },
+        "widthPath": { "$ref": "#/$defs/nullableString" },
+        "heightPath": { "$ref": "#/$defs/nullableString" },
+        "viewCountPath": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+
+    "actionsSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rate": { "oneOf": [{ "$ref": "#/$defs/actionSpec" }, { "type": "null" }] },
+        "rateValueScale": { "$ref": "#/$defs/nullableNumber" },
+        "addFavorite": { "oneOf": [{ "$ref": "#/$defs/actionSpec" }, { "type": "null" }] },
+        "removeFavorite": { "oneOf": [{ "$ref": "#/$defs/actionSpec" }, { "type": "null" }] },
+        "incrementViewCount": { "oneOf": [{ "$ref": "#/$defs/actionSpec" }, { "type": "null" }] }
+      }
+    },
+
+    "actionSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] },
+        "graphql": { "oneOf": [{ "$ref": "#/$defs/graphqlActionSpec" }, { "type": "null" }] }
+      }
+    },
+
+    "graphqlActionSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "variables"],
+      "properties": {
+        "query": { "type": "string" },
+        "variables": {}
+      }
+    },
+
+    "attributionSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notice", "url"],
+      "properties": {
+        "notice": { "type": "string" },
+        "url": { "type": "string" }
       }
     }
   }

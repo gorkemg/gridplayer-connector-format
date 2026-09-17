@@ -22,12 +22,26 @@ auth flow, a new field-mapping shape. Targeting a different server, a
 different query, or different field names never requires a version bump;
 the interpreter is generic over those already.
 
-The current format version is **2**.
+The current format version is **5**.
 
 | Version | Added |
 |---|---|
 | 1 | Initial format: `auth`, `metadataLookup`, `browse` (flat item listing), `tagsLookup`. |
 | 2 | `browse.categories` (sidebar category sources, e.g. Jellyfin's libraries or a fixed facet like Tags/Genres), `browse.containerTypeValues` + `itemMapping.typePath` (container-vs-playable item detection for hierarchical browsing, e.g. Library → Series → Season → Episode). Also nested the REST item-listing fields (`listRequest`/`itemsPath`/`itemMapping`) under `browse.rest.listing` (a `RESTListingSpec`), shared with a category source's own listing — a shape change from v1's flat `browse.rest.{listRequest,itemsPath,itemMapping}`. `sortFieldMap`/`sortDirectionMap` (on a listing) and `staticEntries`/`dependsOnContextKey` (on a category source) were added to the interpreter alongside the Plex connector but were missing from this document until now — see [`itemMapping`](#itemmapping)-adjacent sort mapping and [Categorization and hierarchy](#categorization-and-hierarchy) below. They're additive and safely ignored by an older client (untranslated sort token, unnested category), so this doesn't bump the format version. |
+| 3 | `browse.itemDetail` (`ItemDetailSpec`) — fetches full, current details for exactly one item by id, refreshing a Media-Library-opened video's metadata live rather than trusting a stale drag-time snapshot. See [Item detail](#browseitemdetail). |
+| 4 | `metadataLookup.rest` (`RESTMetadataLookupSpec`) — title-search metadata lookup for a REST connector with no fingerprint API (e.g. a TMDB-/TheTVDB-style catalog). `metadataLookup.dialects` became optional as part of this (a REST-transport connector sets `rest` instead). See [`metadataLookup`](#metadatalookup). |
+| 5 | `auth.headerValuePrefix` — a static prefix (e.g. `"Bearer "`) sent in front of the resolved secret under `headerName`, for a server whose header-based auth needs more than the bare secret. See [`auth`](#auth). |
+
+Ratings, favoriting, view-count, and several informational `itemMapping`
+fields (cover image, codecs, bitrate, frame rate, resolution) were added to
+the interpreter alongside the Plex connector but, like `sortFieldMap` in v2,
+were missing from this document until now. They're additive and safely
+ignored by an older client (no rating/favorite control shown, no extra
+detail line), so none of them bump the format version on their own — see
+[Ratings, favorites, and actions](#ratings-favorites-and-actions) and the
+[`itemMapping`](#itemmapping) reference below. The top-level `attribution`
+field (see [`attribution`](#attribution)) is the same kind of purely
+additive, safely-ignored field.
 
 ## Top-level shape
 
@@ -35,12 +49,14 @@ The current format version is **2**.
 {
   "id": "my-server",           // stable identifier, not shown to users
   "name": "My Server",         // shown in GridPlayer's UI
-  "version": 2,
+  "version": 5,
   "transport": "rest",         // "rest" | "graphql" — picks which of the two browse/lookup shapes below apply
   "auth": { ... },             // required
-  "metadataLookup": { ... },   // optional — hash-based metadata matching (GraphQL only, today)
+  "metadataLookup": { ... },   // optional — fingerprint- or title-search-based metadata matching
   "browse": { ... },           // optional — library browsing (either transport)
-  "tagsLookup": { ... }        // optional — flat tag/category list for a filter picklist (GraphQL only, today)
+  "tagsLookup": { ... },       // optional — flat tag/category list for a filter picklist (GraphQL only, today)
+  "actions": { ... },          // optional — write operations: rate, favorite, increment view count
+  "attribution": { ... }       // optional — a required-credit notice some data sources' own terms mandate
 }
 ```
 
@@ -54,19 +70,27 @@ versa.
 ```jsonc
 {
   "type": "header",            // "header" | "login" | "none"
-  "headerName": "ApiKey",      // header the resolved credential is sent under (header/login)
+  "headerName": "Authorization", // header the resolved credential is sent under (header/login)
   "extraHeaders": { ... },     // optional — static headers always sent, e.g. required client-ID headers
   "login": { ... },            // required when type == "login"
-  "queryParamName": "apikey"   // optional, defaults to "apikey" — see below
+  "queryParamName": "apikey",  // optional, defaults to "apikey" — see below
+  "headerValuePrefix": "Bearer " // optional (v5+) — see below
 }
 ```
 
 - **`header`**: a single static, pre-shared secret (an admin-issued API key)
-  sent as-is under `headerName`.
+  sent under `headerName`, optionally prefixed by `headerValuePrefix`.
 - **`login`**: a username/password is exchanged for a session token via one
   request, then that token is sent the same way `header` would send a static
-  one. See `login` below.
+  one, `headerValuePrefix` included. See `login` below.
 - **`none`**: no credential at all.
+
+`headerValuePrefix` (v5+) is static text prepended to the resolved secret —
+e.g. TMDB's API expects `Authorization: Bearer <token>`, not the bare token,
+so a TMDB-style connector sets `"headerValuePrefix": "Bearer "`. `null`/
+omitted (every connector before this field existed) sends the secret as-is.
+Only affects the header form — there's no equivalent prefix convention for
+the `queryParamName` form below.
 
 `queryParamName` matters for anything that can't send a custom header —
 `AVPlayerItem(url:)` for streaming, a plain image download for a screenshot.
@@ -89,9 +113,14 @@ connector's own request templates point at.
 
 ## `metadataLookup`
 
-Hash-based, single-item metadata matching against a GraphQL server — "does
-this server know a video with this file hash, and if so, what's its title,
-cast, tags, chapters?"
+Exactly one of `dialects` (GraphQL, hash-based) / `rest` (REST, title-search
+based) is set, matching the connector's top-level `transport`.
+
+### Hash-based (`metadataLookup.dialects`, GraphQL only)
+
+Single-item metadata matching against a GraphQL server — "does this server
+know a video with this file hash, and if so, what's its title, cast, tags,
+chapters?"
 
 ```jsonc
 {
@@ -122,6 +151,60 @@ as structured JSON data, never spliced into the query text).
 on each element." `mapping.chapters` (optional) works the same way over a
 nested array — `arrayPath` locates it, `secondsPath` is required per
 element, everything else is optional.
+
+### Title-search (`metadataLookup.rest`, v4+, REST only)
+
+For a server with no fingerprint/hash API at all — a catalog you search by
+title instead (TMDB, TheTVDB). GridPlayer derives a title and, where
+possible, a release year from the video's file name (a best-effort
+heuristic: dots/underscores as word separators, a four-digit year or an
+`SxxEyy` episode marker ending the title), searches, and feeds the first
+(highest-relevance) result's id into the *same* single-item detail fetch
+`browse.itemDetail` uses — there's no separate metadata-only field-mapping
+shape; `itemMapping` (`title`/`castPath`/`tagsPath`/`chapters`) already
+covers everything a match needs, so a title-search connector's `itemMapping`
+simply leaves every browsing-only field (`streamURLPath`, `durationPath`,
+...) unset.
+
+```jsonc
+{
+  "rest": {
+    "searchRequest": { "method": "GET", "path": "search/movie", "query": { "query": "{title}", "year": "{year}" } },
+    "resultsPath": "results",
+    "resultIDPath": "id",
+    "resultTypePath": null,
+    "resultTypeMap": null,
+    "detail": { "rest": { "request": { "method": "GET", "path": "movie/{id}", "query": null }, "itemMapping": { ... } } }
+  }
+}
+```
+
+- **`searchRequest`**: may reference `{title}` and, when the file name
+  yielded one, `{year}` — an unresolved `{year}` is dropped like any other
+  unresolved REST placeholder, so the template can reference it
+  unconditionally.
+- **`resultsPath`**: path to the search response's results array.
+- **`resultIDPath`**: path, relative to the *first* result, to that result's
+  own id — substituted into `detail`'s `{id}`. Accepts either a JSON string
+  or a whole-number JSON value (TMDB's `id` is a bare integer, not a
+  string).
+- **`resultTypePath`** / **`resultTypeMap`** (both optional): for a server
+  whose detail endpoint shape depends on the matched entity's kind — e.g.
+  TheTVDB's `type` field (`"movie"`/`"series"`) picks between
+  `movies/{id}/extended` and `series/{id}/extended`. `resultTypePath` reads
+  the raw value from the first result; `resultTypeMap` translates it into
+  whatever literal token `detail` actually needs before substituting
+  `{type}` (`"movie"` doesn't mechanically pluralize into `"movies"`, and
+  `"series"` must not be touched at all — a static lookup, not a string
+  transformation rule, same rationale as `sortFieldMap`). `null` passes the
+  raw value through unchanged. Omit both for a connector with only one
+  entity kind (a movie-only catalog, say), which then never references
+  `{type}` in `detail` at all.
+- **`detail`**: an `ItemDetailSpec` — see [Item detail](#browseitemdetail)
+  below for its shape. Reused as-is; nothing metadata-specific about it.
+
+An empty results array, or a result whose id can't be resolved, is a normal
+"no match" outcome (`null` metadata), not an error.
 
 ## `browse`
 
@@ -207,7 +290,8 @@ covers every hierarchy depth, including the unscoped root.
 
 Field mapping for one browsable item, relative to that item's own JSON node.
 Only `id` and `title` are required — everything else is best-effort; a
-server with no chapters simply omits `chapters`.
+server with no chapters simply omits `chapters`. `id` accepts either a JSON
+string or a whole-number JSON value (some REST APIs report a bare integer).
 
 ```jsonc
 {
@@ -221,9 +305,30 @@ server with no chapters simply omits `chapters`.
   "castPath": "performers[].name",
   "tagsPath": "tags[].name",
   "chapters": null,
-  "typePath": null                  // optional — see Categorization and hierarchy
+  "typePath": null,                 // optional — see Categorization and hierarchy
+  "ratingPath": null,               // optional — see Ratings, favorites, and actions
+  "ratingDivisor": null,
+  "isFavoritePath": null,
+  "coverURLPath": null,             // optional — higher-resolution image, distinct from screenshotURLPath
+  "videoCodecPath": null,           // optional — purely informational, shown in file-info detail
+  "audioCodecPath": null,
+  "bitratePath": null,
+  "bitrateDivisor": null,
+  "frameRatePath": null,
+  "widthPath": null,
+  "heightPath": null,
+  "viewCountPath": null             // optional — see Ratings, favorites, and actions
 }
 ```
+
+`coverURLPath`/`videoCodecPath`/`audioCodecPath`/`bitratePath`/
+`bitrateDivisor`/`frameRatePath`/`widthPath`/`heightPath` are purely
+informational — GridPlayer shows them in file-info detail but never
+interprets them. `bitrateDivisor` follows the inverse convention from
+`durationDivisor`/`ratingDivisor` (both "raw ÷ divisor"): it's a
+**multiplier's reciprocal**, e.g. `0.001` if the server reports kbps instead
+of bits/second, since a fractional divisor stands in for the multiplication
+that direction of unit conversion needs.
 
 ## Categorization and hierarchy
 
@@ -295,6 +400,105 @@ A connector with no hierarchy concept (a flat scene list, say) omits
 `typePath` — every item is then always a leaf, and `containerTypeValues`
 is irrelevant.
 
+### `browse.itemDetail` (v3+)
+
+Fetches full, current details for exactly one item by id — used to refresh
+a Media-Library-opened video's metadata live, rather than trusting a stale
+drag-time snapshot or the browse listing's necessarily thinner per-item
+mapping. It's also what a title-search `metadataLookup.rest` reuses for its
+own detail step (see [Title-search](#title-search-metadatalookuprest-v4-rest-only)
+above) — there's nothing metadata-specific about it. Exactly one of
+`rest`/`graphql` is set, matching the connector's transport.
+
+```jsonc
+{
+  "rest": {
+    "request": { "method": "GET", "path": "items/{id}", "query": null },
+    "itemPath": null,                 // optional — path to the item node if the response wraps it
+    "itemMapping": { ... }            // same shape as browse.rest.listing.itemMapping
+  }
+}
+```
+
+or, for a GraphQL connector:
+
+```jsonc
+{
+  "graphql": {
+    "query": "query FindItem($id: ID!) { findItem(id: $id) { title } }",
+    "variables": { "id": "{{id}}" },
+    "resultPath": "findItem",
+    "itemMapping": { ... }
+  }
+}
+```
+
+`itemPath` is `null`/omitted when the response body *is* the item (most
+REST APIs' single-item endpoint); set it when the single-item endpoint
+still wraps the result in the listing's own shape (e.g. Plex:
+`"MediaContainer.Metadata[0]"`).
+
+`null`/omitted entirely (every connector before this field existed) means
+this capability doesn't exist for this connector — a video opened from the
+Media Library then just keeps whatever came with it already.
+
+## Ratings, favorites, and actions
+
+Added to the interpreter alongside the Plex connector, without their own
+format version bump (see [Versioning](#versioning)) — an older GridPlayer
+build simply shows no rating/favorite control rather than misinterpreting
+anything.
+
+**Reading a rating or favorite flag** — on `itemMapping`:
+
+```jsonc
+{
+  "ratingPath": "userRating",   // this server's own rating field
+  "ratingDivisor": 2,           // normalizes to GridPlayer's 0–5 scale, e.g. Plex's 0–10 userRating ÷ 2
+  "isFavoritePath": "isFavorite"
+}
+```
+
+`ratingDivisor` follows the "raw ÷ divisor" convention (`null` means the raw
+value is already 0–5). `isFavoritePath` is `null` for a connector with no
+favorite concept at all — distinct from a resolved `false` ("known not
+favorited").
+
+**Filtering by rating or favorite in the toolbar** — on `browse`:
+
+```jsonc
+{
+  "supportsFavoriteFilter": true,
+  "maxRatingFilter": 5,                     // shows a 1...N star filter control
+  "ratingFilterScale": 2,                   // scales the toolbar's raw star count up to this server's native range
+  "ratingFilterExclusiveComparator": false, // true if this server's filter is strictly-greater-than only
+  "ratingFilterModifierToken": null         // literal token for a companion {{minRatingModifier}} placeholder some GraphQL-style filters need
+}
+```
+
+Both `null`/omitted (every connector before these fields existed) hides the
+corresponding toolbar control entirely.
+
+**Write operations** — top-level `actions` (`ActionsSpec`), each
+independently optional; GridPlayer only shows a write control (a tappable
+star, a heart button) when the corresponding action is present:
+
+```jsonc
+{
+  "rate": { "rest": { "method": "PUT", "path": "items/{id}/rate/{value}", "query": null }, "graphql": null },
+  "rateValueScale": 2,        // rescales GridPlayer's 0-5 star count to this server's native range before {value}/{{value}} substitution
+  "addFavorite": { ... },
+  "removeFavorite": { ... },  // split from addFavorite since the two directions are often genuinely different requests (e.g. POST vs. DELETE on the same path)
+  "incrementViewCount": { ... } // no {value} needed, just {id}/{{id}}
+}
+```
+
+Each action is an `ActionSpec` (`{ "rest": RESTRequestSpec, "graphql": null }`
+or the reverse) — a REST one uses the usual `{placeholder}` substitution in
+`path`/`query`; a GraphQL one (`{ "query": ..., "variables": { ... } }`)
+substitutes `{{id}}`/`{{value}}` into `variables` the same way a read query
+does, then prunes anything left unresolved.
+
 ## `tagsLookup`
 
 Lists every known tag/category the server has, for a filter picklist,
@@ -307,6 +511,25 @@ independent of any specific item — GraphQL only, today.
   "namesPath": "[].name"
 }
 ```
+
+## `attribution`
+
+Some data sources' own terms require a visible credit and link wherever
+their data is shown — not every server needs this (Jellyfin/Plex don't),
+but a public catalog API (TMDB, TheTVDB) typically does. Added without a
+format version bump: it's purely additive display data, safe for an older
+GridPlayer build to just not show.
+
+```jsonc
+{
+  "notice": "This product uses the Example API but is not endorsed or certified by Example.",
+  "url": "https://example.com"
+}
+```
+
+`notice` is shown verbatim — GridPlayer never rewords it, since it's the
+source's own required wording, not descriptive copy. `null`/omitted (every
+connector before this field existed) shows nothing extra.
 
 ## Path syntax reference
 
