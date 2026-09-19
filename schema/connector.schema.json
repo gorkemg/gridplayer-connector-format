@@ -9,6 +9,7 @@
     "id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
     "version": { "type": "integer", "minimum": 1 },
+    "revision": { "type": ["integer", "null"] },
     "transport": { "enum": ["rest", "graphql"] },
     "auth": { "$ref": "#/$defs/authSpec" },
     "metadataLookup": { "oneOf": [{ "$ref": "#/$defs/metadataLookupSpec" }, { "type": "null" }] },
@@ -92,7 +93,8 @@
         "resultIDPath": { "type": "string" },
         "resultTypePath": { "$ref": "#/$defs/nullableString" },
         "resultTypeMap": { "$ref": "#/$defs/stringMap" },
-        "detail": { "$ref": "#/$defs/itemDetailSpec" }
+        "detail": { "$ref": "#/$defs/itemDetailSpec" },
+        "hashRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] }
       }
     },
 
@@ -241,7 +243,8 @@
           ]
         },
         "selectionContextKey": { "type": "string" },
-        "dependsOnContextKey": { "$ref": "#/$defs/nullableString" }
+        "dependsOnContextKey": { "$ref": "#/$defs/nullableString" },
+        "supportsFavoriteFilter": { "$ref": "#/$defs/nullableBoolean" }
       }
     },
 
@@ -283,7 +286,8 @@
         "totalCountPath": { "$ref": "#/$defs/nullableString" },
         "itemMapping": { "$ref": "#/$defs/mediaItemMapping" },
         "sortFieldMap": { "$ref": "#/$defs/stringMap" },
-        "sortDirectionMap": { "$ref": "#/$defs/stringMap" }
+        "sortDirectionMap": { "$ref": "#/$defs/stringMap" },
+        "favoriteFilterValue": { "$ref": "#/$defs/nullableString" }
       }
     },
 

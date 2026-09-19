@@ -51,6 +51,7 @@ additive, safely-ignored field.
   "id": "my-server",           // stable identifier, not shown to users
   "name": "My Server",         // shown in GridPlayer's UI
   "version": 6,
+  "revision": 3,               // optional — the connector author's own counter for this definition (see below)
   "transport": "rest",         // "rest" | "graphql" — picks which of the two browse/lookup shapes below apply
   "auth": { ... },             // required
   "metadataLookup": { ... },   // optional — fingerprint- or title-search-based metadata matching
@@ -60,6 +61,14 @@ additive, safely-ignored field.
   "attribution": { ... }       // optional — a required-credit notice some data sources' own terms mandate
 }
 ```
+
+`revision` (optional integer) is the connector author's own counter for *this
+definition* — 1, 2, 3 … — entirely separate from `version`, which is the
+format version a GridPlayer build must understand. It lets GridPlayer tell a
+user who replaces an installed connector with another file whether the new one
+is newer, the same, or older. Purely informational: it never changes how the
+connector runs, and omitting it just means "unnumbered", so it needs no format
+version bump.
 
 A connector needs at least one of `metadataLookup` / `browse` to be useful,
 but the format doesn't require both — a server that only does hash-based
@@ -108,9 +117,14 @@ connector's own request templates point at.
   "path": "auth/login",           // POST path, relative to the server's base URL
   "usernameField": "username",    // JSON body field name for the username
   "passwordField": "password",    // JSON body field name for the password
-  "tokenResponsePath": "token"    // path into the login response where the session token lives
+  "tokenResponsePath": "token",   // path into the login response where the session token lives
+  "userIDResponsePath": "User.Id" // optional — where the authenticated user's own id lives, for {userId} in action paths
 }
 ```
+
+`userIDResponsePath` is only needed when a write action's URL is scoped by the
+user's own id (Jellyfin: `Users/{userId}/FavoriteItems/{id}`); without it,
+`{userId}` simply never resolves.
 
 ## `metadataLookup`
 
@@ -151,7 +165,11 @@ as structured JSON data, never spliced into the query text).
 `"performers[].name"` means "resolve `performers` as an array, then `name`
 on each element." `mapping.chapters` (optional) works the same way over a
 nested array — `arrayPath` locates it, `secondsPath` is required per
-element, everything else is optional.
+element, everything else is optional: `secondsDivisor` (for a server that
+reports offsets in another unit — Jellyfin's `StartPositionTicks` are 100 ns
+ticks, divisor `10000000`), `endSecondsPath` (end of the chapter's range),
+`titlePath` (a custom label), and `tagNamePath` (the tag the chapter is
+categorized under, used for per-tag colors and tag-based jump filtering).
 
 ### Title-search (`metadataLookup.rest`, v4+, REST only)
 
@@ -180,6 +198,15 @@ simply leaves every browsing-only field (`streamURLPath`, `durationPath`,
 }
 ```
 
+- **`hashRequest`** (optional, additive — an older client ignores it and just
+  does the title search): a fingerprint lookup tried *before*
+  `searchRequest`, for a source that can identify a file by its hash — a far
+  more reliable match than a title guess. May reference `{hash}`. Its
+  response goes through the same `resultsPath` / `resultIDPath` / `detail`
+  handling, except that `resultsPath` may also resolve to a single object (the
+  matched record itself) instead of an array. A miss — no result, or an HTTP
+  404 for an unknown hash — falls back to `searchRequest`; any other HTTP
+  error (a rejected token, say) still fails the lookup.
 - **`searchRequest`**: may reference `{title}` and, when the file name
   yielded one, `{year}` — an unresolved `{year}` is dropped like any other
   unresolved REST placeholder, so the template can reference it
@@ -479,6 +506,20 @@ favorited").
 
 Both `null`/omitted (every connector before these fields existed) hides the
 corresponding toolbar control entirely.
+
+Two more fields refine the favorite filter:
+
+- **`favoriteFilterValue`**, on a listing (`browse.rest.listing`, a category
+  source's `rest`, or `browse.graphql`) — the literal substituted for
+  `{favoriteOnly}` / `{{favoriteOnly}}` while the toolbar's favorite filter is
+  on. `null` uses the canonical `"true"`; some servers want a specific token
+  instead (Jellyfin's `Filters` parameter takes `"IsFavorite"`).
+- **`supportsFavoriteFilter` on a category source** — declares that *that
+  source's own* listing (a facet like a people or studio list) understands
+  `{favoriteOnly}`, independent of `browse.supportsFavoriteFilter`, which only
+  governs the leaf item listing. A connector can therefore offer a favorite
+  filter on one facet and a rating filter on its items at once, each shown only
+  where it means something. `null`/omitted hides the control for that source.
 
 **Write operations** — top-level `actions` (`ActionsSpec`), each
 independently optional; GridPlayer only shows a write control (a tappable
