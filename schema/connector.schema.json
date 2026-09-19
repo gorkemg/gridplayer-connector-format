@@ -355,7 +355,8 @@
       "required": ["notice", "url"],
       "properties": {
         "notice": { "type": "string" },
-        "url": { "type": "string" }
+        "url": { "type": "string" },
+        "iconURL": { "$ref": "#/$defs/nullableString" }
       }
     }
   }

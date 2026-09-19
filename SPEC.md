@@ -22,7 +22,7 @@ auth flow, a new field-mapping shape. Targeting a different server, a
 different query, or different field names never requires a version bump;
 the interpreter is generic over those already.
 
-The current format version is **5**.
+The current format version is **6**.
 
 | Version | Added |
 |---|---|
@@ -31,6 +31,7 @@ The current format version is **5**.
 | 3 | `browse.itemDetail` (`ItemDetailSpec`) — fetches full, current details for exactly one item by id, refreshing a Media-Library-opened video's metadata live rather than trusting a stale drag-time snapshot. See [Item detail](#browseitemdetail). |
 | 4 | `metadataLookup.rest` (`RESTMetadataLookupSpec`) — title-search metadata lookup for a REST connector with no fingerprint API (e.g. a TMDB-/TheTVDB-style catalog). `metadataLookup.dialects` became optional as part of this (a REST-transport connector sets `rest` instead). See [`metadataLookup`](#metadatalookup). |
 | 5 | `auth.headerValuePrefix` — a static prefix (e.g. `"Bearer "`) sent in front of the resolved secret under `headerName`, for a server whose header-based auth needs more than the bare secret. See [`auth`](#auth). |
+| 6 | Array-mapping paths accept a filter bracket, `[key=value]` / `[key!=value]`, alongside `[]` — e.g. `People[Type=Actor].Name` keeps only the cast entries that are actors. Bumped (unlike a purely additive display field) because an older client can't interpret the bracket and would silently map *no* elements — an empty cast that looks like "none" — instead of refusing the connector. See [Path syntax reference](#path-syntax-reference). |
 
 Ratings, favoriting, view-count, and several informational `itemMapping`
 fields (cover image, codecs, bitrate, frame rate, resolution) were added to
@@ -49,7 +50,7 @@ additive, safely-ignored field.
 {
   "id": "my-server",           // stable identifier, not shown to users
   "name": "My Server",         // shown in GridPlayer's UI
-  "version": 5,
+  "version": 6,
   "transport": "rest",         // "rest" | "graphql" — picks which of the two browse/lookup shapes below apply
   "auth": { ... },             // required
   "metadataLookup": { ... },   // optional — fingerprint- or title-search-based metadata matching
@@ -523,13 +524,23 @@ GridPlayer build to just not show.
 ```jsonc
 {
   "notice": "This product uses the Example API but is not endorsed or certified by Example.",
-  "url": "https://example.com"
+  "url": "https://example.com",
+  "iconURL": "https://example.com/logo.png"   // optional
 }
 ```
 
 `notice` is shown verbatim — GridPlayer never rewords it, since it's the
 source's own required wording, not descriptive copy. `null`/omitted (every
 connector before this field existed) shows nothing extra.
+
+`iconURL` (optional, also added without a version bump — an older client
+just doesn't show it) is a logo shown next to the notice, for a source whose
+terms ask for one. It must be an `https` URL to a raster image (PNG or JPEG
+— SVG isn't rendered). GridPlayer fetches it with no credential, only while
+the attribution is on screen, treats it as purely decorative (the `notice`
+text is what carries the meaning), and shows just the text if it isn't
+`https` or fails to load. Whether hotlinking a given logo is permitted is up
+to the connector's author to check with the source.
 
 ## Path syntax reference
 
@@ -539,6 +550,17 @@ connector before this field existed) shows nothing extra.
   `arrayPath` contexts) — resolves the whole array, then `b` on every
   element. An empty head (`"[].b"`) means the node itself is already the
   array.
+- **Array filter** (v6+): `"a[key=value].b"` / `"a[key!=value].b"` — like
+  array mapping, but keeps only the elements whose `key` does (`=`) or
+  doesn't (`!=`) equal `value`. `key` is a path relative to each element
+  (`type`, or nested: `person.type`). The comparison is exact and
+  case-sensitive against the field's text form — a string, a whole number, or
+  `true`/`false`. An element missing the field never matches `=` and always
+  matches `!=`. `value` runs to the closing `]`, so it can't contain `]` or
+  `.`. Only the first bracket in a path filters; a bare index like `[0]` isn't
+  an array bracket and is skipped. A filter with no key matches nothing.
+  Example: Jellyfin-style `"People[Type=Actor].Name"` lists only the actors
+  from a `People` array that also holds directors and writers.
 - **GraphQL variable templates**: `"{{name}}"` — whole-value-only
   substitution inside a `variables` JSON tree.
 - **REST path/query templates**: `"{name}"` — substring substitution inside
