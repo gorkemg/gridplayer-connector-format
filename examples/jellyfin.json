@@ -5,9 +5,10 @@
     "transport": "rest",
     "auth": {
         "type": "login",
-        "headerName": "X-Emby-Token",
+        "headerName": "Authorization",
+        "headerValueTemplate": "MediaBrowser Client=\"GridPlayer\", Device=\"Mac\", DeviceId=\"gridplayer-app\", Version=\"1.0.0\", Token=\"{token}\"",
         "extraHeaders": {
-            "X-Emby-Authorization": "MediaBrowser Client=\"GridPlayer\", Device=\"Mac\", DeviceId=\"gridplayer-app\", Version=\"1.0.0\""
+            "Authorization": "MediaBrowser Client=\"GridPlayer\", Device=\"Mac\", DeviceId=\"gridplayer-app\", Version=\"1.0.0\""
         },
         "login": {
             "path": "Users/AuthenticateByName",
@@ -15,7 +16,7 @@
             "passwordField": "Pw",
             "tokenResponsePath": "AccessToken"
         },
-        "queryParamName": "api_key"
+        "queryParamName": "ApiKey"
     },
     "metadataLookup": null,
     "browse": {

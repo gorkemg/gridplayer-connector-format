@@ -39,7 +39,8 @@
         },
         "login": { "oneOf": [{ "$ref": "#/$defs/loginSpec" }, { "type": "null" }] },
         "queryParamName": { "$ref": "#/$defs/nullableString" },
-        "headerValuePrefix": { "$ref": "#/$defs/nullableString" }
+        "headerValuePrefix": { "$ref": "#/$defs/nullableString" },
+        "headerValueTemplate": { "$ref": "#/$defs/nullableString" }
       }
     },
 

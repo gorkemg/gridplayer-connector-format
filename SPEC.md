@@ -22,7 +22,7 @@ auth flow, a new field-mapping shape. Targeting a different server, a
 different query, or different field names never requires a version bump;
 the interpreter is generic over those already.
 
-The current format version is **6**.
+The current format version is **7**.
 
 | Version | Added |
 |---|---|
@@ -32,6 +32,7 @@ The current format version is **6**.
 | 4 | `metadataLookup.rest` (`RESTMetadataLookupSpec`) — title-search metadata lookup for a REST connector with no fingerprint API (e.g. a TMDB-/TheTVDB-style catalog). `metadataLookup.dialects` became optional as part of this (a REST-transport connector sets `rest` instead). See [`metadataLookup`](#metadatalookup). |
 | 5 | `auth.headerValuePrefix` — a static prefix (e.g. `"Bearer "`) sent in front of the resolved secret under `headerName`, for a server whose header-based auth needs more than the bare secret. See [`auth`](#auth). |
 | 6 | Array-mapping paths accept a filter bracket, `[key=value]` / `[key!=value]`, alongside `[]` — e.g. `People[Type=Actor].Name` keeps only the cast entries that are actors. Bumped (unlike a purely additive display field) because an older client can't interpret the bracket and would silently map *no* elements — an empty cast that looks like "none" — instead of refusing the connector. See [Path syntax reference](#path-syntax-reference). |
+| 7 | `auth.headerValueTemplate` — the resolved token embedded inside a static header value (via a literal `{token}` placeholder) instead of sent under its own header, for a server whose auth header combines a client-identification string and the token in one value. See [`auth`](#auth). |
 
 Ratings, favoriting, view-count, and several informational `itemMapping`
 fields (cover image, codecs, bitrate, frame rate, resolution) were added to
@@ -50,7 +51,7 @@ additive, safely-ignored field.
 {
   "id": "my-server",           // stable identifier, not shown to users
   "name": "My Server",         // shown in GridPlayer's UI
-  "version": 6,
+  "version": 7,
   "revision": 3,               // optional — the connector author's own counter for this definition (see below)
   "transport": "rest",         // "rest" | "graphql" — picks which of the two browse/lookup shapes below apply
   "auth": { ... },             // required
@@ -84,15 +85,17 @@ versa.
   "extraHeaders": { ... },     // optional — static headers always sent, e.g. required client-ID headers
   "login": { ... },            // required when type == "login"
   "queryParamName": "apikey",  // optional, defaults to "apikey" — see below
-  "headerValuePrefix": "Bearer " // optional (v5+) — see below
+  "headerValuePrefix": "Bearer ", // optional (v5+) — see below
+  "headerValueTemplate": "MediaBrowser Client=\"…\", Token=\"{token}\"" // optional (v7+) — see below
 }
 ```
 
 - **`header`**: a single static, pre-shared secret (an admin-issued API key)
-  sent under `headerName`, optionally prefixed by `headerValuePrefix`.
+  sent under `headerName`, optionally prefixed by `headerValuePrefix`, or
+  substituted into `headerValueTemplate` when that's set.
 - **`login`**: a username/password is exchanged for a session token via one
   request, then that token is sent the same way `header` would send a static
-  one, `headerValuePrefix` included. See `login` below.
+  one, `headerValuePrefix`/`headerValueTemplate` included. See `login` below.
 - **`none`**: no credential at all.
 
 `headerValuePrefix` (v5+) is static text prepended to the resolved secret —
@@ -101,6 +104,24 @@ so a TMDB-style connector sets `"headerValuePrefix": "Bearer "`. `null`/
 omitted (every connector before this field existed) sends the secret as-is.
 Only affects the header form — there's no equivalent prefix convention for
 the `queryParamName` form below.
+
+`headerValueTemplate` (v7+) is for a server whose header-based auth combines
+a static client-identification string *and* the token in one value, rather
+than the token having a header (or a prefix within one) to itself. Jellyfin
+12 is the motivating case, verified live: every authenticated request must
+carry a single `Authorization` header shaped like
+`MediaBrowser Client="MyApp", Device="Mac", DeviceId="…", Version="1.0", Token="<token>"`
+— so its connector sets `"headerName": "Authorization"` and
+`"headerValueTemplate": "MediaBrowser Client=\"MyApp\", Device=\"Mac\", DeviceId=\"…\", Version=\"1.0\", Token=\"{token}\""`.
+The literal substring `{token}` in the template is replaced with the resolved
+secret; everything else in the template is sent verbatim. When set, it
+replaces `headerValuePrefix` for that header entirely — the two are never
+combined. It's never applied to the *login* request itself (that request has
+no token yet — `extraHeaders` alone covers whatever static header a login
+call needs, e.g. Jellyfin's client-identification string before a session
+exists); it only applies once a token/API key exists, to every request made
+after. `null`/omitted (every connector before this field existed) keeps the
+old `headerName`/`headerValuePrefix` behavior exactly.
 
 `queryParamName` matters for anything that can't send a custom header —
 `AVPlayerItem(url:)` for streaming, a plain image download for a screenshot.
