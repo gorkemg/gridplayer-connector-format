@@ -201,7 +201,8 @@
       "properties": {
         "listing": { "$ref": "#/$defs/restListingSpec" },
         "streamRequest": { "$ref": "#/$defs/restRequestSpec" },
-        "imageRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] }
+        "imageRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] },
+        "remuxStreamRequest": { "oneOf": [{ "$ref": "#/$defs/restRequestSpec" }, { "type": "null" }] }
       }
     },
 
@@ -319,7 +320,8 @@
         "frameRatePath": { "$ref": "#/$defs/nullableString" },
         "widthPath": { "$ref": "#/$defs/nullableString" },
         "heightPath": { "$ref": "#/$defs/nullableString" },
-        "viewCountPath": { "$ref": "#/$defs/nullableString" }
+        "viewCountPath": { "$ref": "#/$defs/nullableString" },
+        "containerPath": { "$ref": "#/$defs/nullableString" }
       }
     },
 

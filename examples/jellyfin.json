@@ -46,10 +46,26 @@
                     "castPath": null,
                     "tagsPath": null,
                     "chapters": null,
-                    "typePath": "Type"
+                    "typePath": "Type",
+                    "containerPath": "Container"
                 }
             },
             "streamRequest": { "method": "GET", "path": "Videos/{id}/stream", "query": { "Static": "true" } },
+            "remuxStreamRequest": {
+                "method": "GET",
+                "path": "Videos/{id}/master.m3u8",
+                "query": {
+                    "MediaSourceId": "{id}",
+                    "DeviceId": "gridplayer-app",
+                    "PlaySessionId": "{uniqueId}",
+                    "SegmentContainer": "mp4",
+                    "VideoCodec": "h264,hevc",
+                    "AudioCodec": "aac,ac3,eac3",
+                    "AllowVideoStreamCopy": "true",
+                    "AllowAudioStreamCopy": "true",
+                    "RequireAvc": "false"
+                }
+            },
             "imageRequest": { "method": "GET", "path": "Items/{id}/Images/Primary", "query": null }
         },
         "graphql": null,

@@ -22,7 +22,7 @@ auth flow, a new field-mapping shape. Targeting a different server, a
 different query, or different field names never requires a version bump;
 the interpreter is generic over those already.
 
-The current format version is **7**.
+The current format version is **8**.
 
 | Version | Added |
 |---|---|
@@ -33,6 +33,7 @@ The current format version is **7**.
 | 5 | `auth.headerValuePrefix` — a static prefix (e.g. `"Bearer "`) sent in front of the resolved secret under `headerName`, for a server whose header-based auth needs more than the bare secret. See [`auth`](#auth). |
 | 6 | Array-mapping paths accept a filter bracket, `[key=value]` / `[key!=value]`, alongside `[]` — e.g. `People[Type=Actor].Name` keeps only the cast entries that are actors. Bumped (unlike a purely additive display field) because an older client can't interpret the bracket and would silently map *no* elements — an empty cast that looks like "none" — instead of refusing the connector. See [Path syntax reference](#path-syntax-reference). |
 | 7 | `auth.headerValueTemplate` — the resolved token embedded inside a static header value (via a literal `{token}` placeholder) instead of sent under its own header, for a server whose auth header combines a client-identification string and the token in one value. See [`auth`](#auth). |
+| 8 | `browse.rest.remuxStreamRequest` + `itemMapping.containerPath` — a server-side HLS remux route for files whose container GridPlayer can't play directly (MKV, WebM, AVI, …), plus the `{uniqueId}` placeholder for it. Bumped so a connector whose library largely depends on this route can require it. An older client ignores both fields and keeps playing the direct stream, so a connector for which remux is only an improvement (Plex, Jellyfin) can keep its lower `version` and stay installable on older GridPlayer builds. See [Server-side remux](#server-side-remux-browserestremuxstreamrequest-v8). |
 
 Ratings, favoriting, view-count, and several informational `itemMapping`
 fields (cover image, codecs, bitrate, frame rate, resolution) were added to
@@ -51,7 +52,7 @@ additive, safely-ignored field.
 {
   "id": "my-server",           // stable identifier, not shown to users
   "name": "My Server",         // shown in GridPlayer's UI
-  "version": 7,
+  "version": 8,
   "revision": 3,               // optional — the connector author's own counter for this definition (see below)
   "transport": "rest",         // "rest" | "graphql" — picks which of the two browse/lookup shapes below apply
   "auth": { ... },             // required
@@ -273,9 +274,14 @@ below.
     "itemMapping": { ... }          // see below
   },
   "streamRequest": { "method": "GET", "path": "items/{id}/stream", "query": null },
-  "imageRequest": { "method": "GET", "path": "items/{id}/image", "query": null }  // optional
+  "imageRequest": { "method": "GET", "path": "items/{id}/image", "query": null },  // optional
+  "remuxStreamRequest": { "method": "GET", "path": "items/{id}/master.m3u8", "query": { "session": "{uniqueId}" } }  // optional (v8+)
 }
 ```
+
+`remuxStreamRequest` (v8+) is the HLS fallback for files GridPlayer can't play
+directly — see [Server-side remux](#server-side-remux-browserestremuxstreamrequest-v8)
+below.
 
 `listing` (a `RESTListingSpec`: `listRequest` + `itemsPath` + `itemMapping`,
 plus the optional `sortFieldMap`/`sortDirectionMap` below) is the same shape
@@ -366,7 +372,8 @@ string or a whole-number JSON value (some REST APIs report a bare integer).
   "frameRatePath": null,
   "widthPath": null,
   "heightPath": null,
-  "viewCountPath": null             // optional — see Ratings, favorites, and actions
+  "viewCountPath": null,            // optional — see Ratings, favorites, and actions
+  "containerPath": null             // optional (v8+) — see Server-side remux
 }
 ```
 
@@ -378,6 +385,71 @@ interprets them. `bitrateDivisor` follows the inverse convention from
 **multiplier's reciprocal**, e.g. `0.001` if the server reports kbps instead
 of bits/second, since a fractional divisor stands in for the multiplication
 that direction of unit conversion needs.
+
+## Server-side remux (`browse.rest.remuxStreamRequest`, v8+)
+
+GridPlayer plays a stream URL with Apple's AVFoundation, which opens MP4/MOV
+files but not Matroska (`.mkv`), WebM, AVI and other containers — even when
+the video and audio inside are codecs it handles fine. Media servers solve
+this by *remuxing*: repackaging the file into HLS on the fly, copying the
+streams where possible instead of transcoding them. Two fields let a REST
+connector use that route for exactly the items that need it:
+
+```jsonc
+{
+  "browse": {
+    "rest": {
+      "listing": {
+        "itemMapping": { "id": "Id", "title": "Name", "containerPath": "Container" }
+      },
+      "streamRequest": { "method": "GET", "path": "Videos/{id}/stream", "query": { "Static": "true" } },
+      "remuxStreamRequest": {
+        "method": "GET",
+        "path": "Videos/{id}/master.m3u8",
+        "query": { "MediaSourceId": "{id}", "PlaySessionId": "{uniqueId}", "SegmentContainer": "mp4" }
+      }
+    }
+  }
+}
+```
+
+- **`itemMapping.containerPath`**: path to the original file's container as
+  the server reports it (Jellyfin: `Container`; Plex: `Media[0].container`).
+  The value may list several comma-separated aliases (Jellyfin reports an
+  MP4 as `"mov,mp4,m4a,3gp,3g2,mj2"`).
+- **`browse.rest.remuxStreamRequest`**: a request template, same shape and
+  `{placeholder}` rules as `streamRequest`, whose URL must return an HLS
+  playlist (`.m3u8`).
+
+For each listed item, GridPlayer compares the reported container with the
+formats it can play directly (the MP4/QuickTime family: `mp4`, `m4v`, `mov`,
+`qt`, `3gp`, `3gpp`, `3g2`, `m4a`; one matching alias is enough). If none
+matches, the item's stream URL is built from `remuxStreamRequest` instead of
+`streamRequest` *or* `itemMapping.streamURLPath`. Otherwise — and whenever
+the container is unknown (no `containerPath`, the field is missing or empty
+on that item) — the direct stream is used, exactly as before v8. Which
+formats count as directly playable is GridPlayer's decision, not the
+connector's: a connector only reports what the file is.
+
+`remuxStreamRequest` may reference one placeholder no other template gets:
+**`{uniqueId}`**, a fresh random token (32 lowercase hex characters) for
+every URL built. Use it for whatever per-playback session id your server
+expects. GridPlayer plays many items side by side, and servers typically
+stop an existing remux when a new one starts under the same session — a
+fixed value would let every new tile end the previous one's playback.
+
+The resolved URL is handed to the player as-is, so it has to be
+self-contained: credentials travel the same way as for `streamRequest`
+(`auth.queryParamName`, appended only on the server's own host), and the
+server must accept the variant playlist and segment requests that follow
+without any further header (Jellyfin copies the master URL's query string,
+credential included, into every URL it returns). Ask the server to copy
+streams rather than transcode them where its API allows it, and to use fMP4
+segments if HEVC video should pass through — HLS only carries HEVC in fMP4,
+not MPEG-TS.
+
+`remuxStreamRequest` is REST-only and applies to the main item listing;
+`null`/omitted (every connector before v8) never remuxes.
 
 ## Categorization and hierarchy
 
@@ -626,7 +698,8 @@ to the connector's author to check with the source.
 - **GraphQL variable templates**: `"{{name}}"` — whole-value-only
   substitution inside a `variables` JSON tree.
 - **REST path/query templates**: `"{name}"` — substring substitution inside
-  a path or query-value string.
+  a path or query-value string. `{uniqueId}` (v8+) is only available inside
+  `browse.rest.remuxStreamRequest` — see [Server-side remux](#server-side-remux-browserestremuxstreamrequest-v8).
 
 ## Constraints
 
